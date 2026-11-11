@@ -48,7 +48,7 @@
 本仓库三机场（Amy / 八戒 / 蚯蚓）合并场景的完整参数：
 
 ```
-flag&one&am=Amy&ammap=八戒>IEPL|Gemini;蚯蚓>「
+flag&one&am=Amy&ammap=八戒>IEPL|Gemini;蚯蚓>「;TAG>丨
 ```
 
 ---

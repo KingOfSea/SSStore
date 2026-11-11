@@ -44,6 +44,11 @@
  * [amap]   开启基于节点名的自动判断机场 (读取下方 airportMap 配置, 正则命中即判定)
  *          优先级: airportMap 正则命中 > am= 手动指定。两者都没命中则不追加机场标记。
  *          自定义机场配置见下方 airportMap (JSON 形式): key=机场显示名, value=匹配原始节点名的正则。
+ *
+ *** 家宽标记 (默认开启, 无需参数)
+ *          原始节点名命中 家庭宽带|静态IP|家宽|住宅|ISP (不区分大小写) 时, 在机场标记里追加 -家宽
+ *          例如: 🇸🇬 新加坡 (Amy-家宽) 01 ; 没有机场名时为 🇸🇬 新加坡 (家宽) 01
+ *          关键词见下方 homeBroadbandRegex, 可按需增删
  */
 
 // const inArg = {'blkey':'iplc+GPT>GPTnewName+NF+IPLC', 'flag':true };
@@ -160,21 +165,33 @@ const rurekey = {
  *
  * 配置来源 (优先级从高到低, 命中即作为完整配置):
  *   1) 参数 amjson=  原始 JSON 字符串, 适合复杂正则。例:
- *        amjson={"机场A":"关键词1|关键词2","机场B":"关键词3|关键词4"}
+ *        amjson={"Amy":"Amy|艾米","八戒":"Gemini|bajie"}
  *   2) 参数 ammap=   紧凑写法, 多个机场用 ; 隔开, 机场名与正则用 > 隔开。例:
- *        ammap=机场A>关键词1|关键词2;机场B>关键词3|关键词4
+ *        ammap=八戒>IEPL|Gemini;蚯蚓>「;TAG>丨
  *      (正则里若需要用到 ; 或 > 字面量, 请改用 amjson=)
- *   3) 下面这份内置默认 (没传 amjson=/ammap= 时的兜底)
+ *   3) 参数 amfile=  指定 json 路径 / 同目录 airport.json (仅 Node/自建后端有效)
+ *   4) 下面这份内置默认 (App 内置沙箱兜底)
  *   传了 amjson= 或 ammap= 会自动开启自动判断, 无需再额外加 amap。
  * 提示: 若“按订阅单独处理”, 直接用参数 am=机场名 最省事 (不依赖节点名特征)。
  */
 let airportRaw = {
-  // 在此填写你的机场配置，格式: "机场显示名": "关键词1|关键词2"
-  // 也可通过参数 ammap= 或 amjson= 在订阅链接中动态注入，避免将机场信息写死在脚本里
-  // "机场A": "关键词1|关键词2",
-  // "机场B": "关键词3|关键词4",
+  Amy: "Amy|AmyTelecom|艾米",
+  八戒: "八戒|bajie|bmjsub|Gemini",
+  // "机场显示名": "关键词1|关键词2",
 };
-// 参数注入配置 (传入即作为完整配置)
+try {
+  const fs = require("fs"),
+    path = require("path");
+  const cfgPath =
+    (inArg.amfile && decodeURI(inArg.amfile)) ||
+    (typeof __dirname !== "undefined" && path.join(__dirname, "airport.json"));
+  if (cfgPath && fs.existsSync(cfgPath)) {
+    airportRaw = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+  }
+} catch (e) {
+  /* 沙箱环境无 fs, 使用内置默认 */
+}
+// 参数注入配置 (内置沙箱推荐, 优先级高于本地文件; 传入即作为完整配置)
 // ammap= 紧凑写法: 机场名>正则;机场名>正则
 if (inArg.ammap) {
   const m = {};
@@ -202,6 +219,10 @@ for (const k in airportRaw) {
 }
 // 是否开启“自动判断机场”: 显式 amap, 或传了 ammap=/amjson= 即视为开启
 const amAuto = !!(amap || inArg.ammap || inArg.amjson);
+
+// 家宽标记: 原始节点名命中以下关键词即视为家宽节点, 在机场标记里追加 -家宽
+const homeBroadbandRegex = /家庭宽带|静态IP|家宽|住宅|ISP/i;
+const HB_TAG = "家宽";
 
 let GetK = false, AMK = []
 function ObjKA(i) {
@@ -253,7 +274,10 @@ function operator(pro) {
         }
       }
     }
-    const amTag = amName ? `(${amName})` : "";
+    // 家宽节点: (机场名-家宽), 没有机场名时为 (家宽)
+    const isHB = homeBroadbandRegex.test(ens);
+    const tagText = [amName, isHB ? HB_TAG : ""].filter((t) => t !== "").join("-");
+    const amTag = tagText ? `(${tagText})` : "";
     // 预处理 防止预判或遗漏
     Object.keys(rurekey).forEach((ikey) => {
       if (rurekey[ikey].test(e.name)) {
